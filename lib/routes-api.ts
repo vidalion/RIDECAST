@@ -1,96 +1,68 @@
-import { supabase } from './supabase';
 import { Route, RouteFormData } from './types';
 
-function transformRouteFromDb(dbRoute: any): Route {
-  return {
-    id: dbRoute.id,
-    userId: dbRoute.user_id,
-    name: dbRoute.name,
-    startAddress: dbRoute.start_address,
-    startLatitude: dbRoute.start_latitude,
-    startLongitude: dbRoute.start_longitude,
-    endAddress: dbRoute.end_address,
-    endLatitude: dbRoute.end_latitude,
-    endLongitude: dbRoute.end_longitude,
-    commuteStartHour: dbRoute.commute_start_hour,
-    commuteEndHour: dbRoute.commute_end_hour,
-    createdAt: dbRoute.created_at,
-    updatedAt: dbRoute.updated_at,
-  };
+const ROUTES_KEY = 'ridecast_routes';
+
+function getStoredRoutes(): Route[] {
+  if (typeof window === 'undefined') return [];
+
+  const stored = localStorage.getItem(ROUTES_KEY);
+  if (!stored) return [];
+
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return [];
+  }
 }
 
-export async function getUserRoutes(userId: string): Promise<Route[]> {
-  const { data, error } = await supabase
-    .from('routes')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: true });
+function saveRoutes(routes: Route[]) {
+  localStorage.setItem(ROUTES_KEY, JSON.stringify(routes));
+}
 
-  if (error) throw error;
-  return data ? data.map(transformRouteFromDb) : [];
+export async function getUserRoutes(): Promise<Route[]> {
+  return getStoredRoutes();
 }
 
 export async function getRoute(routeId: string): Promise<Route | null> {
-  const { data, error } = await supabase
-    .from('routes')
-    .select('*')
-    .eq('id', routeId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? transformRouteFromDb(data) : null;
+  const routes = getStoredRoutes();
+  return routes.find(r => r.id === routeId) || null;
 }
 
-export async function createRoute(userId: string, routeData: RouteFormData): Promise<Route> {
-  const { data, error } = await supabase
-    .from('routes')
-    .insert({
-      user_id: userId,
-      name: routeData.name,
-      start_address: routeData.startAddress,
-      start_latitude: routeData.startLatitude,
-      start_longitude: routeData.startLongitude,
-      end_address: routeData.endAddress,
-      end_latitude: routeData.endLatitude,
-      end_longitude: routeData.endLongitude,
-      commute_start_hour: routeData.commuteStartHour,
-      commute_end_hour: routeData.commuteEndHour,
-    })
-    .select()
-    .single();
+export async function createRoute(routeData: RouteFormData): Promise<Route> {
+  const routes = getStoredRoutes();
 
-  if (error) throw error;
-  return transformRouteFromDb(data);
+  const newRoute: Route = {
+    id: crypto.randomUUID(),
+    userId: 'local-user',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...routeData
+  };
+
+  routes.push(newRoute);
+  saveRoutes(routes);
+
+  return newRoute;
 }
 
 export async function updateRoute(routeId: string, routeData: RouteFormData): Promise<Route> {
-  const { data, error } = await supabase
-    .from('routes')
-    .update({
-      name: routeData.name,
-      start_address: routeData.startAddress,
-      start_latitude: routeData.startLatitude,
-      start_longitude: routeData.startLongitude,
-      end_address: routeData.endAddress,
-      end_latitude: routeData.endLatitude,
-      end_longitude: routeData.endLongitude,
-      commute_start_hour: routeData.commuteStartHour,
-      commute_end_hour: routeData.commuteEndHour,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', routeId)
-    .select()
-    .single();
+  const routes = getStoredRoutes();
+  const index = routes.findIndex(r => r.id === routeId);
 
-  if (error) throw error;
-  return transformRouteFromDb(data);
+  if (index === -1) throw new Error("Route not found");
+
+  routes[index] = {
+    ...routes[index],
+    ...routeData,
+    updatedAt: new Date().toISOString()
+  };
+
+  saveRoutes(routes);
+
+  return routes[index];
 }
 
 export async function deleteRoute(routeId: string): Promise<void> {
-  const { error } = await supabase
-    .from('routes')
-    .delete()
-    .eq('id', routeId);
-
-  if (error) throw error;
+  const routes = getStoredRoutes().filter(r => r.id !== routeId);
+  saveRoutes(routes);
 }
